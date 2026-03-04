@@ -1,0 +1,233 @@
+`default_nettype none
+`timescale 1ns/1ns
+
+// ============================================================================
+// COMPUTE CORE
+// ============================================================================
+// Purpose: The heart of the GPU — processes one block of threads at a time.
+// The GPU contains multiple cores, each handling THREADS_PER_BLOCK threads.
+//
+// Internal structure:
+//   - 1 Scheduler  : Manages the 6-stage execution pipeline
+//   - 1 Fetcher    : Fetches instructions from program memory (shared)
+//   - 1 Decoder    : Decodes instructions into control signals (shared)
+//   - N ALUs       : One per thread — arithmetic & comparison
+//   - N LSUs       : One per thread — memory load/store
+//   - N Registers  : One per thread — 16 registers each
+//   - N PCs        : One per thread — program counter & branching
+//
+// The key insight: fetcher and decoder are SHARED across threads because
+// all threads execute the SAME instruction (SIMD model). Only the data
+// processing units (ALU, LSU, registers, PC) are per-thread.
+// ============================================================================
+module core #(
+    parameter DATA_MEM_ADDR_BITS = 8,
+    parameter DATA_MEM_DATA_BITS = 8,
+    parameter PROGRAM_MEM_ADDR_BITS = 8,
+    parameter PROGRAM_MEM_DATA_BITS = 16,
+    parameter THREADS_PER_BLOCK = 4
+) (
+    input wire clk,
+    input wire reset,
+
+    // Kernel execution control (from dispatcher)
+    input wire start,
+    output wire done,
+
+    // Block metadata (from dispatcher)
+    input wire [7:0] block_id,
+    input wire [$clog2(THREADS_PER_BLOCK):0] thread_count,
+
+    // Program memory interface (to program memory controller)
+    output reg program_mem_read_valid,
+    output reg [PROGRAM_MEM_ADDR_BITS-1:0] program_mem_read_address,
+    input reg program_mem_read_ready,
+    input reg [PROGRAM_MEM_DATA_BITS-1:0] program_mem_read_data,
+
+    // Data memory interface (to data memory controller, per thread)
+    output reg [THREADS_PER_BLOCK-1:0] data_mem_read_valid,
+    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_read_address [THREADS_PER_BLOCK-1:0],
+    input reg [THREADS_PER_BLOCK-1:0] data_mem_read_ready,
+    input reg [DATA_MEM_DATA_BITS-1:0] data_mem_read_data [THREADS_PER_BLOCK-1:0],
+    output reg [THREADS_PER_BLOCK-1:0] data_mem_write_valid,
+    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_write_address [THREADS_PER_BLOCK-1:0],
+    output reg [DATA_MEM_DATA_BITS-1:0] data_mem_write_data [THREADS_PER_BLOCK-1:0],
+    input reg [THREADS_PER_BLOCK-1:0] data_mem_write_ready
+);
+    // ---- Internal State ----
+    reg [2:0] core_state;      // Current pipeline stage
+    reg [2:0] fetcher_state;   // Fetcher progress
+    reg [15:0] instruction;    // Current instruction being executed
+
+    // ---- Intermediate Signals ----
+    reg [7:0] current_pc;                          // Current program counter
+    wire [7:0] next_pc[THREADS_PER_BLOCK-1:0];    // Next PC from each thread
+    reg [7:0] rs[THREADS_PER_BLOCK-1:0];           // Source register 1 values
+    reg [7:0] rt[THREADS_PER_BLOCK-1:0];           // Source register 2 values
+    reg [1:0] lsu_state[THREADS_PER_BLOCK-1:0];   // LSU states (scheduler checks these)
+    reg [7:0] lsu_out[THREADS_PER_BLOCK-1:0];     // LSU outputs (memory load results)
+    wire [7:0] alu_out[THREADS_PER_BLOCK-1:0];    // ALU outputs (computation results)
+
+    // ---- Decoded Instruction Signals ----
+    reg [3:0] decoded_rd_address;
+    reg [3:0] decoded_rs_address;
+    reg [3:0] decoded_rt_address;
+    reg [2:0] decoded_nzp;
+    reg [7:0] decoded_immediate;
+
+    // ---- Decoded Control Signals ----
+    reg decoded_reg_write_enable;
+    reg decoded_mem_read_enable;
+    reg decoded_mem_write_enable;
+    reg decoded_nzp_write_enable;
+    reg [1:0] decoded_reg_input_mux;
+    reg [1:0] decoded_alu_arithmetic_mux;
+    reg decoded_alu_output_mux;
+    reg decoded_pc_mux;
+    reg decoded_ret;
+
+    // ==========================================
+    // Shared Units (1 per core)
+    // ==========================================
+
+    // Fetcher — retrieves instructions from program memory
+    fetcher #(
+        .PROGRAM_MEM_ADDR_BITS(PROGRAM_MEM_ADDR_BITS),
+        .PROGRAM_MEM_DATA_BITS(PROGRAM_MEM_DATA_BITS)
+    ) fetcher_instance (
+        .clk(clk),
+        .reset(reset),
+        .core_state(core_state),
+        .current_pc(current_pc),
+        .mem_read_valid(program_mem_read_valid),
+        .mem_read_address(program_mem_read_address),
+        .mem_read_ready(program_mem_read_ready),
+        .mem_read_data(program_mem_read_data),
+        .fetcher_state(fetcher_state),
+        .instruction(instruction)
+    );
+
+    // Decoder — converts instruction to control signals
+    decoder decoder_instance (
+        .clk(clk),
+        .reset(reset),
+        .core_state(core_state),
+        .instruction(instruction),
+        .decoded_rd_address(decoded_rd_address),
+        .decoded_rs_address(decoded_rs_address),
+        .decoded_rt_address(decoded_rt_address),
+        .decoded_nzp(decoded_nzp),
+        .decoded_immediate(decoded_immediate),
+        .decoded_reg_write_enable(decoded_reg_write_enable),
+        .decoded_mem_read_enable(decoded_mem_read_enable),
+        .decoded_mem_write_enable(decoded_mem_write_enable),
+        .decoded_nzp_write_enable(decoded_nzp_write_enable),
+        .decoded_reg_input_mux(decoded_reg_input_mux),
+        .decoded_alu_arithmetic_mux(decoded_alu_arithmetic_mux),
+        .decoded_alu_output_mux(decoded_alu_output_mux),
+        .decoded_pc_mux(decoded_pc_mux),
+        .decoded_ret(decoded_ret)
+    );
+
+    // Scheduler — manages pipeline state machine
+    scheduler #(
+        .THREADS_PER_BLOCK(THREADS_PER_BLOCK)
+    ) scheduler_instance (
+        .clk(clk),
+        .reset(reset),
+        .start(start),
+        .fetcher_state(fetcher_state),
+        .core_state(core_state),
+        .decoded_mem_read_enable(decoded_mem_read_enable),
+        .decoded_mem_write_enable(decoded_mem_write_enable),
+        .decoded_ret(decoded_ret),
+        .lsu_state(lsu_state),
+        .current_pc(current_pc),
+        .next_pc(next_pc),
+        .done(done)
+    );
+
+    // ==========================================
+    // Per-Thread Units (N per core)
+    // ==========================================
+    genvar i;
+    generate
+        for (i = 0; i < THREADS_PER_BLOCK; i = i + 1) begin : threads
+            // ALU — per-thread arithmetic & comparison
+            alu alu_instance (
+                .clk(clk),
+                .reset(reset),
+                .enable(i < thread_count),
+                .core_state(core_state),
+                .decoded_alu_arithmetic_mux(decoded_alu_arithmetic_mux),
+                .decoded_alu_output_mux(decoded_alu_output_mux),
+                .rs(rs[i]),
+                .rt(rt[i]),
+                .alu_out(alu_out[i])
+            );
+
+            // LSU — per-thread memory access
+            lsu lsu_instance (
+                .clk(clk),
+                .reset(reset),
+                .enable(i < thread_count),
+                .core_state(core_state),
+                .decoded_mem_read_enable(decoded_mem_read_enable),
+                .decoded_mem_write_enable(decoded_mem_write_enable),
+                .mem_read_valid(data_mem_read_valid[i]),
+                .mem_read_address(data_mem_read_address[i]),
+                .mem_read_ready(data_mem_read_ready[i]),
+                .mem_read_data(data_mem_read_data[i]),
+                .mem_write_valid(data_mem_write_valid[i]),
+                .mem_write_address(data_mem_write_address[i]),
+                .mem_write_data(data_mem_write_data[i]),
+                .mem_write_ready(data_mem_write_ready[i]),
+                .rs(rs[i]),
+                .rt(rt[i]),
+                .lsu_state(lsu_state[i]),
+                .lsu_out(lsu_out[i])
+            );
+
+            // Register File — per-thread, 16 registers
+            registers #(
+                .THREADS_PER_BLOCK(THREADS_PER_BLOCK),
+                .THREAD_ID(i),
+                .DATA_BITS(DATA_MEM_DATA_BITS)
+            ) register_instance (
+                .clk(clk),
+                .reset(reset),
+                .enable(i < thread_count),
+                .block_id(block_id),
+                .core_state(core_state),
+                .decoded_reg_write_enable(decoded_reg_write_enable),
+                .decoded_reg_input_mux(decoded_reg_input_mux),
+                .decoded_rd_address(decoded_rd_address),
+                .decoded_rs_address(decoded_rs_address),
+                .decoded_rt_address(decoded_rt_address),
+                .decoded_immediate(decoded_immediate),
+                .alu_out(alu_out[i]),
+                .lsu_out(lsu_out[i]),
+                .rs(rs[i]),
+                .rt(rt[i])
+            );
+
+            // Program Counter — per-thread, with branching
+            pc #(
+                .DATA_MEM_DATA_BITS(DATA_MEM_DATA_BITS),
+                .PROGRAM_MEM_ADDR_BITS(PROGRAM_MEM_ADDR_BITS)
+            ) pc_instance (
+                .clk(clk),
+                .reset(reset),
+                .enable(i < thread_count),
+                .core_state(core_state),
+                .decoded_nzp(decoded_nzp),
+                .decoded_immediate(decoded_immediate),
+                .decoded_nzp_write_enable(decoded_nzp_write_enable),
+                .decoded_pc_mux(decoded_pc_mux),
+                .alu_out(alu_out[i]),
+                .current_pc(current_pc),
+                .next_pc(next_pc[i])
+            );
+        end
+    endgenerate
+endmodule

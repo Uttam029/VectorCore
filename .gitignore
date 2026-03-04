@@ -1,0 +1,16 @@
+# Build artifacts
+build/
+*.vvp
+*.vcd
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Test logs
+test/logs/*.txt
+
+# OS files
+.DS_Store
+Thumbs.db
