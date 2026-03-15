@@ -31,6 +31,7 @@
 - [Simulation](#simulation)
 - [Schematics](#schematics)
 - [Advanced Functionality](#advanced-functionality)
+- [Future Developments](#future-developments)
 
 ---
 
@@ -246,6 +247,40 @@ For the sake of simplicity, there are many features implemented in modern GPUs t
 - **Memory Coalescing**: Combining neighboring memory requests into a single memory transaction to save addressing bandwidth.
 - **Pipelining & Warp Scheduling**: Streaming execution of multiple instructions simultaneously, or hiding memory latency by swapping between different "warps" of threads.
 - **Branch Divergence**: Handling situations where different threads in the same block evaluate an `IF` statement differently and must temporarily execute different instruction paths.
+
+---
+
+# Future Developments
+
+###  Architecture
+- [ ] **True SIMT execution** — Broadcast single instruction to all threads in a block, fire all ALUs in the same clock cycle.
+- [ ] **Per-thread NZP flags** — Ensure branch correctness when threads produce different comparison results.
+- [ ] **%gridDim register** — 4th SIMD register needed for fully general kernel bounds-checking.
+- [ ] **Configurable core/thread count** — Makefile params to easily scale the hardware simulation.
+
+###  Memory
+- [ ] **Memory coalescing** — Merge adjacent memory requests into a single transaction to save bandwidth.
+- [ ] **L1 instruction cache** — Small direct-mapped cache per core to reduce global memory fetches.
+- [ ] **Shared memory (SRAM scratchpad)** — Fast inter-thread shared memory within a block.
+
+###  Kernels
+- [ ] **SAXPY** (`C = α·A + B`) — Scalar broadcast and fused multiply-add.
+- [ ] **Dot Product** — Tree reduction across threads using shared memory.
+- [ ] **Matrix Multiplication** — Nested loops to stress-test branch instructions.
+- [ ] **Parallel Prefix Sum (Scan)** — Foundation for sort and histogram kernels.
+
+###  Tooling
+- [ ] **Python Assembler** — Convert human-readable `.asm` files into binary format.
+- [ ] **Performance Benchmarks** — Cycle count comparisons across different configurations.
+- [ ] **GitHub Actions CI** — Automated simulation and verification on every push.
+
+###  Scheduler & Warp Management
+- [ ] **SIMT-correct scheduler** — Shared PC per block with simultaneous updates.
+- [ ] **Warp scheduling** — Context-switch blocks on memory stalls to hide latency.
+- [ ] **Branch divergence handling** — Mask execution and serialize divergent paths for correctness.
+
+###  Dream Goal
+- [ ] **Port DOOM** — The ultimate milestone. Develop a specialized graphics kernel and port the legendary DOOM (1993) to run on VectorCore's SIMD architecture.
 
 
 
