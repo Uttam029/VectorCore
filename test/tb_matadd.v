@@ -14,6 +14,11 @@ module tb_matadd;
     parameter DATA_MEM_NUM_CHANNELS = 4;
     parameter PROGRAM_MEM_NUM_CHANNELS = 1;
 
+    // Configurable Hardware Parameters
+    parameter NUM_CORES = 2;
+    parameter THREADS_PER_BLOCK = 4;
+    parameter NUM_THREADS = 8;
+
     // Clock and reset
     reg clk = 0;
     reg reset = 0;
@@ -54,8 +59,8 @@ module tb_matadd;
         .PROGRAM_MEM_ADDR_BITS(8),
         .PROGRAM_MEM_DATA_BITS(16),
         .PROGRAM_MEM_NUM_CHANNELS(1),
-        .NUM_CORES(2),
-        .THREADS_PER_BLOCK(4)
+        .NUM_CORES(NUM_CORES),
+        .THREADS_PER_BLOCK(THREADS_PER_BLOCK)
     ) gpu_inst (
         .clk(clk),
         .reset(reset),
@@ -175,7 +180,7 @@ module tb_matadd;
         $display("============================================================");
         $display("  VectorCore: Matrix Addition Simulation");
         $display("  C = A + B  where A = B = [0, 1, 2, 3, 4, 5, 6, 7]");
-        $display("  8 threads, 2 cores, 4 threads/block");
+        $display("  %0d threads, %0d cores, %0d threads/block", NUM_THREADS, NUM_CORES, THREADS_PER_BLOCK);
         $display("============================================================");
         $display("");
         $display("--- Initial Data Memory ---");
@@ -196,11 +201,11 @@ module tb_matadd;
         reset = 0;
 
         // ================================================================
-        // Configure DCR: Set thread count = 8
+        // Configure DCR: Set thread count = NUM_THREADS
         // Need extra cycles for DCR value to propagate through the design
         // ================================================================
         device_control_write_enable = 1;
-        device_control_data = 8;
+        device_control_data = NUM_THREADS;
         @(posedge clk);
         @(posedge clk);  // Extra cycle for DCR latch to propagate
         device_control_write_enable = 0;
@@ -209,7 +214,7 @@ module tb_matadd;
         // ================================================================
         // Start Kernel
         // ================================================================
-        $display(">>> Launching kernel with 8 threads...");
+        $display(">>> Launching kernel with %0d threads...", NUM_THREADS);
         $display("    thread_count=%0d, total_blocks=%0d",
             gpu_inst.thread_count,
             gpu_inst.dispatch_instance.total_blocks);

@@ -83,6 +83,7 @@ module gpu #(
 
     // DCR output
     wire [7:0] thread_count;
+    wire [7:0] total_blocks;
 
     // Core control signals (from/to dispatcher)
     reg [NUM_CORES-1:0] core_start;
@@ -190,7 +191,8 @@ module gpu #(
         .core_reset(core_reset),
         .core_block_id(core_block_id),
         .core_thread_count(core_thread_count),
-        .done(done)
+        .done(done),
+        .total_blocks(total_blocks)
     );
 
     // ==========================================
@@ -243,6 +245,7 @@ module gpu #(
                 .done(core_done[i]),
                 .block_id(core_block_id[i]),
                 .thread_count(core_thread_count[i]),
+                .total_blocks(total_blocks),
 
                 // Program memory (fetcher → program memory controller)
                 .program_mem_read_valid(fetcher_read_valid[i]),

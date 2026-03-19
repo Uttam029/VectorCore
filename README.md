@@ -10,6 +10,8 @@
 <p align="center">
   <img alt="SystemVerilog" src="https://img.shields.io/badge/SystemVerilog-005271?style=for-the-badge&logo=systemverilog&logoColor=white">
   <img alt="Icarus Verilog" src="https://img.shields.io/badge/Icarus_Verilog-00A6D6?style=for-the-badge&logo=gnu&logoColor=white">
+  <img alt="Status" src="https://img.shields.io/badge/Status-v0.2__SIMT__Execution-brightgreen?style=for-the-badge">
+  <img alt="Execution" src="https://img.shields.io/badge/Execution-True__SIMT__Parallel-brightgreen?style=for-the-badge">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge">
 </p>
 
@@ -212,6 +214,8 @@ Matrix B (addr 8-15): 0 1 2 3 4 5 6 7
   RESULTS (completed in 175 cycles)
 ============================================================
 
+*Note: While ALUs execute in true SIMT parallel (all firing same-cycle), execution time is currently bottlenecked by the 4-channel memory controller serializing the 8 simultaneous thread memory requests. Memory coalescing will significantly drop the cycle count.*
+
 --- Final Data Memory ---
 Matrix A (addr 0-7):   0 1 2 3 4 5 6 7
 Matrix B (addr 8-15):  0 1 2 3 4 5 6 7
@@ -253,10 +257,10 @@ For the sake of simplicity, there are many features implemented in modern GPUs t
 # Future Developments
 
 ###  Architecture
-- [ ] **True SIMT execution** — Broadcast single instruction to all threads in a block, fire all ALUs in the same clock cycle.
-- [ ] **Per-thread NZP flags** — Ensure branch correctness when threads produce different comparison results.
-- [ ] **%gridDim register** — 4th SIMD register needed for fully general kernel bounds-checking.
-- [ ] **Configurable core/thread count** — Makefile params to easily scale the hardware simulation.
+- [x] **True SIMT execution** — Broadcast single instruction to all threads in a block, fire all ALUs in the same clock cycle.
+- [x] **Per-thread NZP flags** — Ensure branch correctness when threads produce different comparison results.
+- [x] **%gridDim register** — 4th SIMD register needed for fully general kernel bounds-checking.
+- [x] **Configurable core/thread count** — Makefile params to easily scale the hardware simulation.
 
 ###  Memory
 - [ ] **Memory coalescing** — Merge adjacent memory requests into a single transaction to save bandwidth.

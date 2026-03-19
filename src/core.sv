@@ -37,6 +37,7 @@ module core #(
     // Block metadata (from dispatcher)
     input wire [7:0] block_id,
     input wire [$clog2(THREADS_PER_BLOCK):0] thread_count,
+    input wire [7:0] total_blocks,
 
     // Program memory interface (to program memory controller)
     output reg program_mem_read_valid,
@@ -198,6 +199,7 @@ module core #(
                 .reset(reset),
                 .enable(i < thread_count),
                 .block_id(block_id),
+                .total_blocks(total_blocks),
                 .core_state(core_state),
                 .decoded_reg_write_enable(decoded_reg_write_enable),
                 .decoded_reg_input_mux(decoded_reg_input_mux),

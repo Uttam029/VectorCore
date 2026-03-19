@@ -9,7 +9,8 @@
 // in each thread's registers.
 //
 // Register layout (16 registers, 4-bit address):
-//   R0  - R12 : General-purpose read/write registers (13 free registers)
+//   R0  - R11 : General-purpose read/write registers (12 free registers)
+//   R12       : %gridDim   (read-only) - Total blocks * threads per block
 //   R13       : %blockIdx  (read-only) - Current block index
 //   R14       : %blockDim  (read-only) - Number of threads per block
 //   R15       : %threadIdx (read-only) - Thread index within the block
@@ -35,6 +36,7 @@ module registers #(
 
     // Block metadata from dispatcher
     input reg [7:0] block_id,
+    input reg [7:0] total_blocks,
 
     // Execution state from scheduler
     input reg [2:0] core_state,
@@ -83,14 +85,16 @@ module registers #(
             registers[9]  <= 8'b0;
             registers[10] <= 8'b0;
             registers[11] <= 8'b0;
-            registers[12] <= 8'b0;
             // Initialize read-only SIMD registers
-            registers[13] <= 8'b0;              // %blockIdx  (updated each block)
+            registers[12] <= 8'b0;               // %gridDim   (updated each kernel)
+            registers[13] <= 8'b0;               // %blockIdx  (updated each block)
             registers[14] <= THREADS_PER_BLOCK;  // %blockDim  (fixed at compile time)
             registers[15] <= THREAD_ID;          // %threadIdx (fixed at compile time)
         end else if (enable) begin
             // Update block_id when dispatcher assigns a new block
             registers[13] <= block_id;
+            // Update gridDim (total threads in the grid)
+            registers[12] <= total_blocks * THREADS_PER_BLOCK;
 
             // Read registers during REQUEST stage - feed values to ALU/LSU
             if (core_state == 3'b011) begin
@@ -100,8 +104,8 @@ module registers #(
 
             // Write to destination register during UPDATE stage
             if (core_state == 3'b110) begin
-                // Only allow writing to R0-R12 (protect read-only registers)
-                if (decoded_reg_write_enable && decoded_rd_address < 13) begin
+                // Only allow writing to R0-R11 (protect read-only registers)
+                if (decoded_reg_write_enable && decoded_rd_address < 12) begin
                     case (decoded_reg_input_mux)
                         ARITHMETIC: begin
                             // ADD, SUB, MUL, DIV result from ALU

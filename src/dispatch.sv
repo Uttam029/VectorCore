@@ -43,7 +43,10 @@ module dispatch #(
     output reg [$clog2(THREADS_PER_BLOCK):0] core_thread_count [NUM_CORES-1:0],
 
     // Kernel completion signal
-    output reg done
+    output reg done,
+
+    // Block metadata to cores
+    output wire [7:0] total_blocks
 );
     // Calculate total blocks needed (ceiling division)
     wire [7:0] total_blocks;
