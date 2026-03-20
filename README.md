@@ -9,10 +9,6 @@
 
 <p align="center">
   <img alt="SystemVerilog" src="https://img.shields.io/badge/SystemVerilog-005271?style=for-the-badge&logo=systemverilog&logoColor=white">
-  <img alt="Icarus Verilog" src="https://img.shields.io/badge/Icarus_Verilog-00A6D6?style=for-the-badge&logo=gnu&logoColor=white">
-  <img alt="Status" src="https://img.shields.io/badge/Status-v0.2__SIMT__Execution-brightgreen?style=for-the-badge">
-  <img alt="Execution" src="https://img.shields.io/badge/Execution-True__SIMT__Parallel-brightgreen?style=for-the-badge">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue?style=for-the-badge">
 </p>
 
 ---
@@ -141,9 +137,38 @@ Each core follows a 6-stage control flow to execute each instruction:
 
 ---
 
-# Kernels
+# Kernels & Python Assembler
 
-### Matrix Addition
+VectorCore supports programming kernels natively in assembly via the included Python Assembler script (`tools/assembler.py`). The assembler translates human-readable assembly files (`.asm`) into binary `.hex` files that the simulation dynamically loads into memory.
+
+## Assembler Syntax Reference
+
+Each assembly line corresponds to a single 16-bit instruction from the VectorCore ISA. Operands are separated by spaces or commas.
+
+### Directives
+Kernels must be configured with directives before the assembly instructions begin:
+- **`.threads <N>`**: Specifies the number of threads for the kernel to run.
+- **`.data <VAL1> <VAL2> ...`**: Initializes global data memory sequentially from address `0`.
+
+### Registers
+- `R0` through `R11` (General purpose read/write)
+- `%gridDim` (R12 - total size of the grid)
+- `%blockIdx` (R13 - current block index)
+- `%blockDim` (R14 - threads per block)
+- `%threadIdx` (R15 - thread index within the block)
+
+*Note: The `%` symbol is optional in assembly (e.g., `threadIdx` and `%threadIdx` are treated the same).*
+
+### Supported Mnemonics
+- **`NOP`** / **`RET`**
+- **`CONST <RD>, #<IMM>`** (e.g. `CONST R1, #16`)
+- **`LDR <RD>, <RS>`** (Loads the value at memory address `RS` into `RD`)
+- **`STR <RS>, <RT>`** (Stores the value in `RT` into memory address `RS`)
+- **`ADD / SUB / MUL / DIV <RD>, <RS>, <RT>`**
+- **`CMP <RS>, <RT>`** (Sets the thread's local `NZP` flags)
+- **`BR<nzp> #<IMM>`** (Branch by `IMM` instruction offset if flag is set. e.g. `BRn #-4`, `BR #0`)
+
+## Matrix Addition (`test/matadd.asm`)
 This matrix addition kernel adds two 1 x 8 matrices by performing 8 element-wise additions in separate threads. It heavily utilizes the `%blockIdx`, `%blockDim`, and `%threadIdx` registers to demonstrate SIMD programming, along with `LDR` and `STR` for async memory management.
 
 ```asm
@@ -186,7 +211,7 @@ RET                            ; end of kernel
 ### Running the Matrix Addition Kernel (`C = A + B`)
 
 ```bash
-# Compile and run the simulation!
+# Compile the .asm file and run the simulation!
 make test_matadd
 
 # Run the simulation AND automatically open the waveform viewer!
@@ -198,6 +223,12 @@ Executing the simulation will print a complete execution log directly to your co
 ![execution trace](docs/waveform.png)
 
 ```text
+--- 1. Assembling Kernel ---
+Assembled 13 instructions and 16 data elements.
+--- 2. Converting SystemVerilog to Verilog ---
+--- 3. Compiling with Icarus Verilog ---
+--- 4. Running Simulation ---
+
 ============================================================
   VectorCore: Matrix Addition Simulation
   C = A + B  where A = B = [0, 1, 2, 3, 4, 5, 6, 7]
@@ -274,7 +305,7 @@ For the sake of simplicity, there are many features implemented in modern GPUs t
 - [ ] **Parallel Prefix Sum (Scan)** — Foundation for sort and histogram kernels.
 
 ###  Tooling
-- [ ] **Python Assembler** — Convert human-readable `.asm` files into binary format.
+- [x] **Python Assembler** — Convert human-readable `.asm` files into binary format.
 - [ ] **Performance Benchmarks** — Cycle count comparisons across different configurations.
 - [ ] **GitHub Actions CI** — Automated simulation and verification on every push.
 
